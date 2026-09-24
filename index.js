@@ -308,17 +308,39 @@ async function apply(ctx, config = {}) {
   state.probeTimer = setInterval(probe, settings.probeIntervalMs);
 }
 
-// Config so users can pin a custom proxy / mode per machine.
+// Config so users can pin a custom proxy / mode per machine. Cordis expects the
+// exported Config to be a Standard Schema object exposing `["~standard"].validate`
+// (it never imports a separate schema library, so we implement the interface
+// directly with no dependency). validate(value) must return { value } on success
+// or { issues: [...] } on failure.
+const MODES = ["auto", "fastgithub", "custom-proxy"];
+
 const Config = {
-  mode: {
-    type: "string",
-    default: DEFAULTS.mode,
-    description: "auto | fastgithub | custom-proxy",
-  },
-  proxyUrl: {
-    type: "string",
-    default: DEFAULTS.proxyUrl,
-    description: "http://host:port of an upstream HTTP(S) proxy to accelerate through when FastGithub is absent",
+  ["~standard"]: {
+    version: 1,
+    vendor: "schemastery",
+    validate(value) {
+      const issues = [];
+      const input = value && typeof value === "object" ? value : {};
+      let mode = DEFAULTS.mode;
+      if (input.mode !== undefined) {
+        if (typeof input.mode !== "string" || !MODES.includes(input.mode)) {
+          issues.push({ path: ["mode"], message: `mode must be one of: ${MODES.join(", ")}` });
+        } else {
+          mode = input.mode;
+        }
+      }
+      let proxyUrl = DEFAULTS.proxyUrl;
+      if (input.proxyUrl !== undefined) {
+        if (typeof input.proxyUrl !== "string") {
+          issues.push({ path: ["proxyUrl"], message: "proxyUrl must be a string like http://host:port" });
+        } else {
+          proxyUrl = input.proxyUrl.trim();
+        }
+      }
+      if (issues.length) return { issues };
+      return { value: { ...DEFAULTS, mode, proxyUrl } };
+    },
   },
 };
 
