@@ -62,6 +62,39 @@ host 半身注入 DSH 代理策略，让 `web_fetch` / `web_search` 绕过 DNS �
 > 自己的 `plugin_manager` 走 `install_bundle`。装完若提示激活失败，**重启该机 DSH**
 > 即可（ESM 模块缓存需重启清空）。
 
+### 在别的电脑安装（从 GitHub 仓库）
+
+插件已推送到 GitHub 仓库 `zijinggong/fastgithub-accelerate`。在**另一台**电脑上安装
+时，用同一套 `install_bundle` 机制指向一个本地克隆即可（这是唯一把 bundle 正确写入
+并激活的途径）：
+
+1. **克隆仓库**（目标电脑需先装 git）：
+
+   ```
+   git clone https://github.com/zijinggong/fastgithub-accelerate
+   ```
+
+2. **安装 bundle**：在目标电脑的 DSH 中调用 `plugin_manager`：
+
+   ```
+   action: install_bundle
+   target: <克隆下来的路径>\fastgithub-accelerate
+   ```
+
+   > 若该机此前装过旧版，先 `remove_bundle fastgithub-accelerate` 再装，避免
+   > ambiguous-install。
+
+3. **重启 DSH**：提示激活失败/无效果时重启即可（ESM 模块缓存）。
+
+可选，若后续已发布 npm / 进入插件市场，可用 CLI 快速加依赖：
+
+```
+dsh plugin web add github:zijinggong/fastgithub-accelerate
+```
+
+> ⚠️ `dsh plugin add` 只是 pnpm 加依赖，**不一定自动激活 bundle**；发布 npm /
+> 上市场之前，跨机安装请用上面的 `install_bundle` 方式。
+
 ---
 
 ## 四、自定义代理加速（无 FastGithub 时）
