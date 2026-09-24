@@ -1,0 +1,16 @@
+# FastGithub acceleration layer for the DSH web profile.
+#
+# Host row (index.js): starts a loopback HTTP forward-proxy, then installs the
+# shared DSH proxy policy pointing at it, so web_fetch / web_search tunnel past
+# DNS pinning and child tools (git/curl) inherit the proxy. FastGithub
+# accelerates underneath via its always-on DNS hijack + interceptors; on Windows
+# its own HttpProxyPort (38457) is linux/osx-only, hence our own port.
+#
+# Client half (client.js) is NOT a host loader row: it is picked up by the
+# `dsh.client` manifest scan (dsh.client.platform: "web") and wired into the
+# browser ModuleLoader graph automatically. Listing it here made the HOST loader
+# try to import client.js in Node, where `window` is undefined -> failed to
+# import. Only the host row belongs in the patch.
+- insert:
+    - id: fastgithub-accelerate
+      name: fastgithub-accelerate

@@ -1,0 +1,41 @@
+{
+  "name": "fastgithub-accelerate",
+  "version": "0.2.0",
+  "description": "Automatically accelerate DSH's GitHub traffic via FastGithub — loopback forward proxy, injected DSH proxy policy, and a composer status badge.",
+  "type": "module",
+  "main": "index.js",
+  "license": "MIT",
+  "keywords": [
+    "deepseek",
+    "harness",
+    "dsh",
+    "dsh-plugin",
+    "fastgithub",
+    "github",
+    "accelerate",
+    "proxy",
+    "network"
+  ],
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "README.md",
+    "INSTALL.md",
+    "LICENSE",
+    "screenshots.json"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  }
+}

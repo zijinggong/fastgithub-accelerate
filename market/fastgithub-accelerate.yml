@@ -1,0 +1,10 @@
+# 上架条目模板 — 复制到 awesome-dsh-plugin/awesome-dsh-plugin 仓库的
+#   data/plugins/<owner>__<repo>.yml
+# 然后把 owner / repo 替换成你真实的 GitHub 用户名和仓库名。
+
+url: https://github.com/OWNER/REPO            # 必须与你的仓库 URL 完全一致
+name: OWNER/REPO
+category: network                              # 可选 network / git / dev
+description:
+  en: 'Automatically accelerate DSH GitHub traffic via FastGithub with a live badge.'
+  zh: '基于 FastGithub 自动加速 DSH 的 GitHub 流量，并显示实时加速状态徽章。'
