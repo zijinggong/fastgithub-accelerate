@@ -91,6 +91,31 @@ The bundle exports a `Config` with two keys:
 | `mode` | `auto` | `auto` \| `fastgithub` \| `custom-proxy`. `auto` uses FastGithub when its DNS hijack is up, else falls back to `proxyUrl` when set. |
 | `proxyUrl` | *(empty)* | `http://host:port` of an upstream HTTP(S) proxy to accelerate through when FastGithub is absent — e.g. a gh-proxy accelerator, a corporate proxy, or a VPN node. |
 
+### Using a custom proxy (no FastGithub)
+
+When the target machine has no FastGithub, configure a reachable upstream HTTP(S)
+proxy and it accelerates GitHub the same way:
+
+```yaml
+# in the profile's cordis.patch.yml
+- id: fastgithub-accelerate
+  config:
+    mode: auto        # auto | fastgithub | custom-proxy
+    proxyUrl: http://<proxy-host>:<proxy-port>
+```
+
+`mode: auto` (recommended) uses FastGithub when its DNS hijack is up and falls
+back to `proxyUrl` otherwise; `mode: custom-proxy` forces the custom proxy and
+ignores FastGithub. Restart DSH after changing config in the profile.
+
+After a restart, `GET /fastgithub/status` reports `"source": "custom-proxy"`,
+`"proxyUrl": "<your proxy>"` and `"accelerating": true`; `web_fetch` and `git`
+then route GitHub traffic through it. No local FastGithub, no DNS hijack, no MITM
+root cert required.
+
+> ⚠️ The proxy must reliably reach GitHub and be trustworthy — with a public
+> gh-proxy accelerator, watch its stability and certificate policy.
+
 ## Requirements
 
 - **Either** FastGithub running (`fastgithub.exe start` / FastGithub UI) with the

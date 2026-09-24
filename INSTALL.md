@@ -74,18 +74,30 @@ host 半身注入 DSH 代理策略，让 `web_fetch` / `web_search` 绕过 DNS �
   `proxyUrl`。**推荐**，一台机器两种情况都能覆盖。
 - `mode: "custom-proxy"`：只用自定义代理，忽略 FastGithub。
 
-**配置方式**：bundle 导出 `Config`（`mode` / `proxyUrl` 两个键），在 DSH 的
-profile 配置里为 `fastgithub-accelerate` 填 `config`，例如：
+**配置方式**：bundle 导出 `Config`（`mode` / `proxyUrl` 两个键），配置写在目标机
+web profile 的 `cordis.patch.yml` 里，以 `- id: fastgithub-accelerate` + `config:`
+块给出（`mode` 缺省为 `auto`，`proxyUrl` 缺省为空）：
 
 ```yaml
-# profile 级配置片段
-fastgithub-accelerate:
-  mode: auto            # auto | fastgithub | custom-proxy
-  proxyUrl: http://<proxy-host>:<proxy-port>
+# 目标机 ~/.dsh/profiles/web/cordis.patch.yml
+- id: fastgithub-accelerate
+  config:
+    mode: auto                      # auto | fastgithub | custom-proxy
+    proxyUrl: http://<proxy-host>:<proxy-port>
 ```
+
+> `mode: "auto"`（默认，推荐）：FastGithub 的 DNS 劫持生效就用 FastGithub；
+> 否则回退到 `proxyUrl`，一台机器两种情况都覆盖。
+> `mode: "custom-proxy"`：只用自定义代理，忽略 FastGithub。
+> 改完配置**重启 DSH** 生效。
 
 `proxyUrl` 指向任何 HTTP(S) 正向代理即可——DSH 的 GitHub 流量会直接走它，
 无需本地 FastGithub、无需 DNS 劫持、无需安装 MITM 证书。
+
+**验证自定义代理路线**：改完重启后 `GET /fastgithub/status` 应返回
+`"source": "custom-proxy"`、`"proxyUrl": "<你填的地址>"`、`"accelerating": true`；
+再 `web_fetch https://github.com/git/git` 应返回 HTTP 200，`git ls-remote
+https://github.com/git/git.git HEAD` 应 exit 0。
 
 > ⚠️ 代理必须**能稳定连 GitHub**，且是可信任的。若用的是 gh-proxy 类公网加速器，
 > 注意其稳定性与证书策略（必要时在代理侧放行 GitHub 域名）。
