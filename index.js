@@ -7,11 +7,20 @@ import { pathToFileURL } from "node:url";
 const name = "fastgithub-accelerate";
 const inject = ["webServer"];
 
+// Two acceleration sources are supported:
+//   1. FastGithub (default): a local DNS hijack (github.com -> 127.0.0.1) plus
+//      interceptors on 127.0.0.1:80/443/22/9418. This plugin owns its own loopback
+//      forwarding port and lets FastGithub accelerate underneath. Requires the
+//      FastGithub service + trusted MITM root cert on the machine.
+//   2. Custom proxy (config.proxyUrl): any HTTPS HTTP(S) proxy (a corporate proxy,
+//      a gh-proxy / Cloudflare-Workers accelerator, a VPN node, ...). No local
+//      FastGithub, no DNS hijack, no MITM cert needed — DSH's traffic is simply
+//      routed through the configured upstream.
+//
 // On Windows FastGithub's own HTTP proxy port is documented linux/osx-only
 // ("HttpProxyPort": 38457 // http代理端口，linux/osx平台使用), so this plugin owns its
-// own loopback forwarding port and lets FastGithub accelerate underneath through
-// its always-on DNS hijack + local interceptors (127.0.0.1:80/443/22/9418).
-const DEFAULTS = { port: 39467, probeIntervalMs: 60000 };
+// own loopback forwarding port.
+const DEFAULTS = { port: 39467, probeIntervalMs: 60000, mode: "auto", proxyUrl: "" };
 
 const GITHUB_HOST_SUFFIXES = [
   ".github.com", ".github.io", ".githubapp.com", ".githubassets.com",
@@ -50,8 +59,9 @@ async function loadHttpProxy() {
   return null;
 }
 
-// EnvLookup over the real launch environment; when nothing exported a proxy we
-// offer ours for both schemes (a real user-exported proxy always wins).
+// EnvLookup over the real launch environment. When config.proxyUrl is set that is
+// the only source we publish; otherwise we offer our loopback proxy for both
+// schemes (a real user-exported proxy always wins).
 function makeEnvLookup(proxyUrl) {
   return {
     get(variable) {
@@ -92,7 +102,8 @@ let PORT = DEFAULTS.port;
 
 // Minimal HTTP forward proxy: CONNECT tunnels for https (byte-pipe; DNS resolution
 // happens here, so GitHub names land on FastGithub's hijacked loopback and are
-// accelerated by its interceptor), absolute-form forwarding for plain http.
+// accelerated by its interceptor — or are forwarded by whatever the custom proxy
+// resolves), absolute-form forwarding for plain http.
 function startProxyServer(state) {
   return new Promise((resolve) => {
     const sockets = new Set();
@@ -168,18 +179,52 @@ function startProxyServer(state) {
 }
 
 function snapshot(state) {
+  // "accelerating" means the DSH proxy policy is installed AND an actual
+  // acceleration source is active: FastGithub's DNS hijack, or a configured
+  // custom proxy. With neither, the loopback proxy is inert (no benefit).
+  const sourceActive = state.source === "fastgithub"
+    ? Boolean(state.fastgithub?.dnsHijack)
+    : state.source === "custom-proxy"
+      ? Boolean(state.proxyUrl)
+      : false;
   return {
-    accelerating: Boolean(state.listening && state.policy === "proxied" && state.fastgithub?.dnsHijack),
+    accelerating: Boolean(state.listening && state.policy === "proxied" && sourceActive),
+    source: state.source || "none",
     endpoint: `http://127.0.0.1:${PORT}`,
     port: PORT,
     listening: Boolean(state.listening),
     policy: state.policy || "none",
+    proxyUrl: state.proxyUrl || null,
     fastgithub: state.fastgithub || null,
     module: state.module || "unknown",
     launchProxyInherited: Boolean(state.launchProxyInherited),
     lastError: state.lastError || null,
     checkedAt: new Date().toISOString(),
   };
+}
+
+// --- Config export -----------------------------------------------------------
+//   mode:      "auto" | "fastgithub" | "custom-proxy"
+//              auto = FastGithub when its DNS hijack is up, else fall back to
+//                     proxyUrl when set; never an error.
+//   proxyUrl:  "http://host:port" of any upstream HTTP(S) proxy to accelerate
+//              through when FastGithub is absent (gh-proxy, corporate proxy,
+//              VPN node, ...). Overrides the FastGithub path when mode is
+//              "custom-proxy"; with mode "auto" it is the fallback source.
+function resolveSource(settings, fastgithub) {
+  const cfgUrl = String(settings.proxyUrl || "").trim();
+  const fgUp = Boolean(fastgithub?.dnsHijack);
+  switch (settings.mode) {
+    case "fastgithub":
+      return { source: "fastgithub", proxyUrl: "" };
+    case "custom-proxy":
+      return { source: cfgUrl ? "custom-proxy" : "none", proxyUrl: cfgUrl };
+    case "auto":
+    default:
+      if (fgUp) return { source: "fastgithub", proxyUrl: "" };
+      if (cfgUrl) return { source: "custom-proxy", proxyUrl: cfgUrl };
+      return { source: "none", proxyUrl: "" };
+  }
 }
 
 async function apply(ctx, config = {}) {
@@ -206,17 +251,29 @@ async function apply(ctx, config = {}) {
   else state.listening = true;
 
   state.fastgithub = await probeFastGithub();
-  if (!state.fastgithub.dnsHijack) {
+  const resolved = resolveSource(settings, state.fastgithub);
+  state.source = resolved.source;
+  state.proxyUrl = resolved.proxyUrl;
+
+  if (state.source === "none") {
+    state.lastError = "no acceleration source: start FastGithub (DNS hijack) or set proxyUrl";
+  } else if (state.source === "fastgithub" && !state.fastgithub.dnsHijack) {
+    // mode forced "fastgithub" but hijack is down — inform the user.
     state.lastError = "FastGithub DNS hijack inactive (start FastGithub service/UI)";
   }
 
-  const proxyUrl = `http://127.0.0.1:${PORT}`;
+  // The URL DSH traffic is routed through. With FastGithub it is our loopback
+  // forward proxy (which resolves via the hijack); with a custom proxy it is the
+  // configured upstream directly.
+  const proxyUrl = state.source === "custom-proxy"
+    ? state.proxyUrl
+    : `http://127.0.0.1:${PORT}`;
   let policyDisposer = null;
   const module = await loadHttpProxy();
   if (!module) {
     state.module = "unavailable";
     state.lastError = "@deepseek-ai/dsh-http-proxy could not be loaded; web_fetch will stay pinned";
-  } else if (state.listening) {
+  } else if (state.listening || state.source === "custom-proxy") {
     try {
       const inherited = ["http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY", "all_proxy", "ALL_PROXY"]
         .some((n) => process.env[n]);
@@ -241,11 +298,28 @@ async function apply(ctx, config = {}) {
   const probe = async () => {
     try {
       state.fastgithub = await probeFastGithub();
-      if (state.fastgithub.dnsHijack) state.lastError = null;
+      const next = resolveSource(settings, state.fastgithub);
+      state.source = next.source;
+      state.proxyUrl = next.proxyUrl;
+      if (state.source !== "none") state.lastError = null;
     } catch { /* keep previous */ }
   };
   probe();
   state.probeTimer = setInterval(probe, settings.probeIntervalMs);
 }
 
-export { apply, inject, name };
+// Config so users can pin a custom proxy / mode per machine.
+const Config = {
+  mode: {
+    type: "string",
+    default: DEFAULTS.mode,
+    description: "auto | fastgithub | custom-proxy",
+  },
+  proxyUrl: {
+    type: "string",
+    default: DEFAULTS.proxyUrl,
+    description: "http://host:port of an upstream HTTP(S) proxy to accelerate through when FastGithub is absent",
+  },
+};
+
+export { apply, inject, name, Config };

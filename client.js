@@ -19,22 +19,30 @@ window.__ModuleLoader__.load({
       }, [probe]);
 
       // Status badge only: acceleration itself runs host-side (proxy policy +
-      // FastGithub DNS hijack). The browser never talks to GitHub directly
-      // through the proxy — a browser sends origin-form requests, which no
-      // forward proxy can serve — so the client only reports state.
+      // an active source). The browser never talks to GitHub directly through
+      // the proxy — a browser sends origin-form requests, which no forward
+      // proxy can serve — so the client only reports state.
       const on = Boolean(status && status.accelerating);
-      const warn = Boolean(status && status.policy === 'proxied' && status.fastgithub && !status.fastgithub.dnsHijack);
+      const source = status ? status.source : 'none';
+      // Warn only when the proxy is up but NO acceleration source is active
+      // (no FastGithub hijack and no custom proxyUrl configured).
+      const warn = Boolean(status && status.policy === 'proxied' && !on);
       const color = on ? '#22c55e' : warn ? '#f59e0b' : '#ef4444';
-      const label = on
-        ? '🚀 FastGithub 加速中'
-        : warn
-          ? '⚠ FastGithub 未接管 DNS'
-          : status && status.policy === 'proxied'
-            ? '· FastGithub 代理就绪'
-            : 'FastGithub 未加速';
+      let label;
+      if (on) {
+        label = source === 'custom-proxy'
+          ? '🚀 自定义代理加速中'
+          : '🚀 FastGithub 加速中';
+      } else if (warn) {
+        label = '⚠ 无加速源 (未接管 DNS / 未配 proxyUrl)';
+      } else if (status && status.policy === 'proxied') {
+        label = '· 代理就绪';
+      } else {
+        label = 'FastGithub 未加速';
+      }
       return h('span', {
         title: status
-          ? `endpoint ${status.endpoint} · policy ${status.policy}` +
+          ? `source ${status.source} · endpoint ${status.endpoint} · policy ${status.policy}` +
             (status.lastError ? ` · ${status.lastError}` : '')
           : 'FastGithub status unreachable',
         style: {

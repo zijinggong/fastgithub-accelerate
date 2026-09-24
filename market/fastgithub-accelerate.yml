@@ -10,5 +10,5 @@ url: https://github.com/zijinggong/fastgithub-accelerate
 name: zijinggong/fastgithub-accelerate
 category: network
 description:
-  en: 'Route DSH web_fetch and git GitHub traffic through FastGithub, with a live status badge.'
-  zh: '让 DSH 的 web_fetch 与 git 的 GitHub 流量经由 FastGithub 加速，并带实时状态徽章。'
+  en: 'Route DSH web_fetch and git GitHub traffic through FastGithub or a custom proxy, with a live status badge.'
+  zh: '让 DSH 的 web_fetch 与 git 的 GitHub 流量经由 FastGithub 或自定义代理加速，并带实时状态徽章。'

@@ -1,7 +1,7 @@
 {
   "name": "fastgithub-accelerate",
-  "version": "0.2.0",
-  "description": "Automatically accelerate DSH's GitHub traffic via FastGithub — loopback forward proxy, injected DSH proxy policy, and a composer status badge.",
+  "version": "0.3.0",
+  "description": "Accelerate DSH's GitHub traffic via FastGithub or a custom proxy — injected DSH proxy policy and a composer status badge.",
   "type": "module",
   "main": "index.js",
   "license": "MIT",

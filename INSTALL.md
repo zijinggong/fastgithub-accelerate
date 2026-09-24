@@ -1,9 +1,15 @@
 # FastGithub 加速插件 — 安装说明
 
-本插件为 DSH (DeepSeek Harness) 提供基于 **FastGithub** 的 GitHub 自动加速：
-host 半身自建环回正向代理并注入 DSH 代理策略，让 `web_fetch` / `web_search`
-绕过 DNS 固定（pinning）并加速；child 工具（git/curl）继承代理；浏览器端在
-输入框工具条显示实时加速状态徽章。
+本插件为 DSH (DeepSeek Harness) 提供 GitHub 自动加速，**支持两种加速源**：
+host 半身注入 DSH 代理策略，让 `web_fetch` / `web_search` 绕过 DNS 固定
+（pinning）并加速；child 工具（git/curl）继承代理；浏览器端在输入框工具条
+显示实时加速状态徽章。
+
+- **加速源 A — FastGithub**（默认）：本机已装 FastGithub，靠它的 DNS 劫持 +
+  本地拦截器加速；
+- **加速源 B — 自定义代理**（`config.proxyUrl`）：本机**没有** FastGithub 时，
+  指定任意上游 HTTP(S) 代理（gh-proxy 加速器 / 公司代理 / VPN 节点等），DSH
+  流量直走该代理加速，无需本地装任何东西。
 
 ---
 
@@ -20,15 +26,20 @@ host 半身自建环回正向代理并注入 DSH 代理策略，让 `web_fetch` 
 
 ## 二、目标机器前置条件（务必先确认）
 
-本插件**依赖 FastGithub 底层加速**。目标机器必须先具备：
+**二选一即可加速**：
 
+**加速源 A（FastGithub）**，目标机需具备：
 1. **FastGithub 已安装并运行**：服务 `fastgithub` 与 `FastGithub.dnscrypt-proxy` 处于 `Running`；
 2. **DNS 劫持生效**：`github.com` 解析到 `127.0.0.1` / `::1`
    （插件靠 `dnsHijack` 检测判断是否加速）；
 3. **FastGithub MITM 根证书已装进受信任根**：`FastGithub.cer` 导入 `LocalMachine\Root`
    （否则 Node / curl / git 走 MITM 时报证书错误）。
 
-> 若目标机**没有 FastGithub**：插件仍可正常加载，`/fastgithub/status` 返回
+**加速源 B（自定义代理）**，目标机只需一个可用的上游代理并把它写进配置：
+`proxyUrl: "http://host:port"`（详见第六节「自定义代理加速」）。**不需要** FastGithub、
+不需要 DNS 劫持、不需要装 MITM 证书。
+
+> 若两者都没有：插件仍可正常加载，`/fastgithub/status` 返回 `source:"none"`、
 > `dnsHijack:false`，只是不加速，UI 徽章显示「未加速」——不会崩溃。
 
 ---
@@ -53,29 +64,60 @@ host 半身自建环回正向代理并注入 DSH 代理策略，让 `web_fetch` 
 
 ---
 
-## 四、验证
+## 四、自定义代理加速（无 FastGithub 时）
+
+目标机**没有 FastGithub**，但有一个可达的上游 HTTP(S) 代理（gh-proxy 加速器 /
+公司代理 / VPN 节点 / 自建反代）时，把插件配置成 `mode: "custom-proxy"` 或
+`mode: "auto"` 并指定 `proxyUrl`：
+
+- `mode: "auto"`（默认）：FastGithub 的 DNS 劫持生效就用 FastGithub；否则回退到
+  `proxyUrl`。**推荐**，一台机器两种情况都能覆盖。
+- `mode: "custom-proxy"`：只用自定义代理，忽略 FastGithub。
+
+**配置方式**：bundle 导出 `Config`（`mode` / `proxyUrl` 两个键），在 DSH 的
+profile 配置里为 `fastgithub-accelerate` 填 `config`，例如：
+
+```yaml
+# profile 级配置片段
+fastgithub-accelerate:
+  mode: auto            # auto | fastgithub | custom-proxy
+  proxyUrl: http://<proxy-host>:<proxy-port>
+```
+
+`proxyUrl` 指向任何 HTTP(S) 正向代理即可——DSH 的 GitHub 流量会直接走它，
+无需本地 FastGithub、无需 DNS 劫持、无需安装 MITM 证书。
+
+> ⚠️ 代理必须**能稳定连 GitHub**，且是可信任的。若用的是 gh-proxy 类公网加速器，
+> 注意其稳定性与证书策略（必要时在代理侧放行 GitHub 域名）。
+
+---
+
+## 五、验证
 
 安装完成后在目标机确认：
 
 - `GET http://127.0.0.1:3080/fastgithub/status`
-  → 应返回 JSON，含 `accelerating` / `policy` / `module` / `fastgithub` 字段；
+  → 应返回 JSON，含 `accelerating` / `source` / `policy` / `module` / `fastgithub` 字段；
+  `source` 为 `fastgithub` 或 `custom-proxy` 时 `accelerating` 应为 `true`；
 - `web_fetch https://github.com/git/git` → 应返回 HTTP 200（此前会被 DNS 固定阻断）；
-- 刷新 Web UI，输入框工具条应出现状态徽章（🚀加速中 / ⚠未接管DNS / ·代理就绪 / 未加速）。
+- 刷新 Web UI，输入框工具条应出现状态徽章（🚀加速中 / ⚠无加速源 / ·代理就绪 / 未加速）。
 
 ---
 
-## 五、常见问题
+## 六、常见问题
 
-- **`fastgithub` 服务未运行 / DNS 未劫持**：徽章显示「⚠ FastGithub 未接管 DNS」，
-  启动 FastGithub 服务/UI 即可。
-- **MITM 证书报错**（`self-signed certificate in certificate chain`）：
+- **`fastgithub` 服务未运行 / DNS 未劫持，且未配 `proxyUrl`**：徽章显示
+  「⚠ 无加速源」，`source:"none"`。启动 FastGithub，或在配置里填 `proxyUrl`。
+- **配了 `proxyUrl` 但报 `source:"none"`**：确认 `mode` 不是 `"fastgithub"`，
+  且 `proxyUrl` 非空、格式为 `http://host:port`。
+- **MITM 证书报错**（FastGithub 场景，`self-signed certificate in certificate chain`）：
   把 FastGithub 生成的 `FastGithub.cer` 导入目标机 `LocalMachine\Root`。
 - **安装后无效果**：确认走 `install_bundle` 且 bundle 在 `bundles` 数组里，
   必要时重启 DSH。
 
 ---
 
-## 六、发布到插件市场
+## 七、发布到插件市场
 
 DSH 内置的 dsh-market 插件列表来自精选列表
 [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)
@@ -94,8 +136,8 @@ DSH 内置的 dsh-market 插件列表来自精选列表
    name: owner/repo
    category: network                           # 或 git / dev，见贡献指南分类列表
    description:
-     en: Automatically accelerate DSH's GitHub traffic via FastGithub.
-     zh: 基于 FastGithub 自动加速 DSH 的 GitHub 流量。
+     en: Route DSH web_fetch and git GitHub traffic through FastGithub or a custom proxy, with a live status badge.
+     zh: 让 DSH 的 web_fetch 与 git 的 GitHub 流量经由 FastGithub 或自定义代理加速，并带实时状态徽章。
    ```
 
    > 描述含 `: `（冒号加空格）时必须加引号，否则 YAML 解析成嵌套键。
